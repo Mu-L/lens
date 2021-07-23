@@ -1,14 +1,34 @@
+/**
+ * Copyright (c) 2021 OpenLens Authors
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy of
+ * this software and associated documentation files (the "Software"), to deal in
+ * the Software without restriction, including without limitation the rights to
+ * use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
+ * the Software, and to permit persons to whom the Software is furnished to do so,
+ * subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+ * FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+ * COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+ * IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+ * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+ */
+
 import "./services.scss";
 
 import React from "react";
 import { observer } from "mobx-react";
-import { RouteComponentProps } from "react-router";
-import { IServicesRouteParams } from "./services.route";
-import { Service } from "../../api/endpoints/service.api";
+import type { RouteComponentProps } from "react-router";
 import { KubeObjectListLayout } from "../kube-object";
 import { Badge } from "../badge";
 import { serviceStore } from "./services.store";
 import { KubeObjectStatusIcon } from "../kube-object-status-icon";
+import type { ServicesRouteParams } from "../../../common/routes";
 
 enum columnId {
   name = "name",
@@ -22,7 +42,7 @@ enum columnId {
   status = "status",
 }
 
-interface Props extends RouteComponentProps<IServicesRouteParams> {
+interface Props extends RouteComponentProps<ServicesRouteParams> {
 }
 
 @observer
@@ -34,19 +54,19 @@ export class Services extends React.Component<Props> {
         tableId="network_services"
         className="Services" store={serviceStore}
         sortingCallbacks={{
-          [columnId.name]: (service: Service) => service.getName(),
-          [columnId.namespace]: (service: Service) => service.getNs(),
-          [columnId.selector]: (service: Service) => service.getSelector(),
-          [columnId.ports]: (service: Service) => (service.spec.ports || []).map(({ port }) => port)[0],
-          [columnId.clusterIp]: (service: Service) => service.getClusterIp(),
-          [columnId.type]: (service: Service) => service.getType(),
-          [columnId.age]: (service: Service) => service.getTimeDiffFromNow(),
-          [columnId.status]: (service: Service) => service.getStatus(),
+          [columnId.name]: service => service.getName(),
+          [columnId.namespace]: service => service.getNs(),
+          [columnId.selector]: service => service.getSelector(),
+          [columnId.ports]: service => (service.spec.ports || []).map(({ port }) => port)[0],
+          [columnId.clusterIp]: service => service.getClusterIp(),
+          [columnId.type]: service => service.getType(),
+          [columnId.age]: service => service.getTimeDiffFromNow(),
+          [columnId.status]: service => service.getStatus(),
         }}
         searchFilters={[
-          (service: Service) => service.getSearchFields(),
-          (service: Service) => service.getSelector().join(" "),
-          (service: Service) => service.getPorts().join(" "),
+          service => service.getSearchFields(),
+          service => service.getSelector().join(" "),
+          service => service.getPorts().join(" "),
         ]}
         renderHeaderTitle="Services"
         renderTableHeader={[
@@ -61,7 +81,7 @@ export class Services extends React.Component<Props> {
           { title: "Age", className: "age", sortBy: columnId.age, id: columnId.age },
           { title: "Status", className: "status", sortBy: columnId.status, id: columnId.status },
         ]}
-        renderTableContents={(service: Service) => [
+        renderTableContents={service => [
           service.getName(),
           <KubeObjectStatusIcon key="icon" object={service} />,
           service.getNs(),

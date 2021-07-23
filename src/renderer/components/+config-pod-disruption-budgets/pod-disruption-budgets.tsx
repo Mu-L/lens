@@ -1,9 +1,30 @@
+/**
+ * Copyright (c) 2021 OpenLens Authors
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy of
+ * this software and associated documentation files (the "Software"), to deal in
+ * the Software without restriction, including without limitation the rights to
+ * use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
+ * the Software, and to permit persons to whom the Software is furnished to do so,
+ * subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+ * FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+ * COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+ * IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+ * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+ */
+
 import "./pod-disruption-budgets.scss";
 
 import * as React from "react";
 import { observer } from "mobx-react";
 import { podDisruptionBudgetsStore } from "./pod-disruption-budgets.store";
-import { PodDisruptionBudget } from "../../api/endpoints/poddisruptionbudget.api";
+import type { PodDisruptionBudget } from "../../api/endpoints/poddisruptionbudget.api";
 import { KubeObjectDetailsProps, KubeObjectListLayout } from "../kube-object";
 import { KubeObjectStatusIcon } from "../kube-object-status-icon";
 
@@ -30,16 +51,16 @@ export class PodDisruptionBudgets extends React.Component<Props> {
         className="PodDisruptionBudgets"
         store={podDisruptionBudgetsStore}
         sortingCallbacks={{
-          [columnId.name]: (pdb: PodDisruptionBudget) => pdb.getName(),
-          [columnId.namespace]: (pdb: PodDisruptionBudget) => pdb.getNs(),
-          [columnId.minAvailable]: (pdb: PodDisruptionBudget) => pdb.getMinAvailable(),
-          [columnId.maxUnavailable]: (pdb: PodDisruptionBudget) => pdb.getMaxUnavailable(),
-          [columnId.currentHealthy]: (pdb: PodDisruptionBudget) => pdb.getCurrentHealthy(),
-          [columnId.desiredHealthy]: (pdb: PodDisruptionBudget) => pdb.getDesiredHealthy(),
-          [columnId.age]: (pdb: PodDisruptionBudget) => pdb.getAge(),
+          [columnId.name]: pdb => pdb.getName(),
+          [columnId.namespace]: pdb => pdb.getNs(),
+          [columnId.minAvailable]: pdb => pdb.getMinAvailable(),
+          [columnId.maxUnavailable]: pdb => pdb.getMaxUnavailable(),
+          [columnId.currentHealthy]: pdb => pdb.getCurrentHealthy(),
+          [columnId.desiredHealthy]: pdb => pdb.getDesiredHealthy(),
+          [columnId.age]: pdb => pdb.getAge(),
         }}
         searchFilters={[
-          (pdb: PodDisruptionBudget) => pdb.getSearchFields(),
+          pdb => pdb.getSearchFields(),
         ]}
         renderHeaderTitle="Pod Disruption Budgets"
         renderTableHeader={[
@@ -52,7 +73,7 @@ export class PodDisruptionBudgets extends React.Component<Props> {
           { title: "Desired Healthy", className: "desired-healthy", sortBy: columnId.desiredHealthy, id: columnId.desiredHealthy },
           { title: "Age", className: "age", sortBy: columnId.age, id: columnId.age },
         ]}
-        renderTableContents={(pdb: PodDisruptionBudget) => {
+        renderTableContents={pdb => {
           return [
             pdb.getName(),
             <KubeObjectStatusIcon key="icon" object={pdb} />,

@@ -1,20 +1,43 @@
+/**
+ * Copyright (c) 2021 OpenLens Authors
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy of
+ * this software and associated documentation files (the "Software"), to deal in
+ * the Software without restriction, including without limitation the rights to
+ * use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
+ * the Software, and to permit persons to whom the Software is furnished to do so,
+ * subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+ * FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+ * COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+ * IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+ * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+ */
+
 // Base class for all kubernetes objects
 
 import moment from "moment";
-import { KubeJsonApiData, KubeJsonApiDataList } from "./kube-json-api";
-import { autobind, formatDuration } from "../utils";
-import { ItemObject } from "../item.store";
+import type { KubeJsonApiData, KubeJsonApiDataList, KubeJsonApiListMetadata, KubeJsonApiMetadata } from "./kube-json-api";
+import { autoBind, formatDuration } from "../utils";
+import type { ItemObject } from "../item.store";
 import { apiKube } from "./index";
-import { JsonApiParams } from "./json-api";
+import type { JsonApiParams } from "./json-api";
 import { resourceApplierApi } from "./endpoints/resource-applier.api";
+import { hasOptionalProperty, hasTypedProperty, isObject, isString, bindPredicate, isTypedArray, isRecord } from "../../common/utils/type-narrowing";
+import _ from "lodash";
 
-export type IKubeObjectConstructor<T extends KubeObject = any> = (new (data: KubeJsonApiData | any) => T) & {
+export type KubeObjectConstructor<K extends KubeObject> = (new (data: KubeJsonApiData | any) => K) & {
   kind?: string;
   namespaced?: boolean;
   apiBase?: string;
 };
 
-export interface IKubeObjectMetadata {
+export interface KubeObjectMetadata {
   uid: string;
   name: string;
   namespace?: string;
@@ -40,7 +63,7 @@ export interface IKubeObjectMetadata {
   }[];
 }
 
-export interface IKubeStatus {
+export interface KubeStatusData {
   kind: string;
   apiVersion: string;
   code: number;
@@ -55,7 +78,7 @@ export class KubeStatus {
   public readonly message: string;
   public readonly reason: string;
 
-  constructor(data: IKubeStatus) {
+  constructor(data: KubeStatusData) {
     this.apiVersion = data.apiVersion;
     this.code = data.code;
     this.message = data.message || "";
@@ -63,14 +86,20 @@ export class KubeStatus {
   }
 }
 
-export type IKubeMetaField = keyof IKubeObjectMetadata;
+export type KubeMetaField = keyof KubeObjectMetadata;
 
-@autobind()
-export class KubeObject implements ItemObject {
+export class KubeObject<Metadata extends KubeObjectMetadata = KubeObjectMetadata, Status = any, Spec = any> implements ItemObject {
   static readonly kind: string;
   static readonly namespaced: boolean;
 
-  static create(data: any) {
+  apiVersion: string;
+  kind: string;
+  metadata: Metadata;
+  status?: Status;
+  spec?: Spec;
+  managedFields?: any;
+
+  static create(data: KubeJsonApiData) {
     return new KubeObject(data);
   }
 
@@ -78,28 +107,95 @@ export class KubeObject implements ItemObject {
     return !item.metadata.name.startsWith("system:");
   }
 
-  static isJsonApiData(object: any): object is KubeJsonApiData {
-    return !object.items && object.metadata;
+  static isJsonApiData(object: unknown): object is KubeJsonApiData {
+    return (
+      isObject(object)
+      && hasTypedProperty(object, "kind", isString)
+      && hasTypedProperty(object, "apiVersion", isString)
+      && hasTypedProperty(object, "metadata", KubeObject.isKubeJsonApiMetadata)
+    );
   }
 
-  static isJsonApiDataList(object: any): object is KubeJsonApiDataList {
-    return object.items && object.metadata;
+  static isKubeJsonApiListMetadata(object: unknown): object is KubeJsonApiListMetadata {
+    return (
+      isObject(object)
+      && hasOptionalProperty(object, "resourceVersion", isString)
+      && hasOptionalProperty(object, "selfLink", isString)
+    );
   }
 
-  static stringifyLabels(labels: { [name: string]: string }): string[] {
+  static isKubeJsonApiMetadata(object: unknown): object is KubeJsonApiMetadata {
+    return (
+      isObject(object)
+      && hasTypedProperty(object, "uid", isString)
+      && hasTypedProperty(object, "name", isString)
+      && hasTypedProperty(object, "resourceVersion", isString)
+      && hasOptionalProperty(object, "selfLink", isString)
+      && hasOptionalProperty(object, "namespace", isString)
+      && hasOptionalProperty(object, "creationTimestamp", isString)
+      && hasOptionalProperty(object, "continue", isString)
+      && hasOptionalProperty(object, "finalizers", bindPredicate(isTypedArray, isString))
+      && hasOptionalProperty(object, "labels", bindPredicate(isRecord, isString, isString))
+      && hasOptionalProperty(object, "annotations", bindPredicate(isRecord, isString, isString))
+    );
+  }
+
+  static isPartialJsonApiMetadata(object: unknown): object is Partial<KubeJsonApiMetadata> {
+    return (
+      isObject(object)
+      && hasOptionalProperty(object, "uid", isString)
+      && hasOptionalProperty(object, "name", isString)
+      && hasOptionalProperty(object, "resourceVersion", isString)
+      && hasOptionalProperty(object, "selfLink", isString)
+      && hasOptionalProperty(object, "namespace", isString)
+      && hasOptionalProperty(object, "creationTimestamp", isString)
+      && hasOptionalProperty(object, "continue", isString)
+      && hasOptionalProperty(object, "finalizers", bindPredicate(isTypedArray, isString))
+      && hasOptionalProperty(object, "labels", bindPredicate(isRecord, isString, isString))
+      && hasOptionalProperty(object, "annotations", bindPredicate(isRecord, isString, isString))
+    );
+  }
+
+  static isPartialJsonApiData(object: unknown): object is Partial<KubeJsonApiData> {
+    return (
+      isObject(object)
+      && hasOptionalProperty(object, "kind", isString)
+      && hasOptionalProperty(object, "apiVersion", isString)
+      && hasOptionalProperty(object, "metadata", KubeObject.isPartialJsonApiMetadata)
+    );
+  }
+
+  static isJsonApiDataList<T>(object: unknown, verifyItem: (val: unknown) => val is T): object is KubeJsonApiDataList<T> {
+    return (
+      isObject(object)
+      && hasTypedProperty(object, "kind", isString)
+      && hasTypedProperty(object, "apiVersion", isString)
+      && hasTypedProperty(object, "metadata", KubeObject.isKubeJsonApiListMetadata)
+      && hasTypedProperty(object, "items", bindPredicate(isTypedArray, verifyItem))
+    );
+  }
+
+  static stringifyLabels(labels?: { [name: string]: string }): string[] {
     if (!labels) return [];
 
     return Object.entries(labels).map(([name, value]) => `${name}=${value}`);
   }
 
+  protected static readonly nonEditableFields = [
+    "apiVersion",
+    "kind",
+    "metadata.name",
+    "metadata.selfLink",
+    "metadata.resourceVersion",
+    "metadata.uid",
+    "managedFields",
+    "status",
+  ];
+
   constructor(data: KubeJsonApiData) {
     Object.assign(this, data);
+    autoBind(this);
   }
-
-  apiVersion: string;
-  kind: string;
-  metadata: IKubeObjectMetadata;
-  status?: any; // todo: type-safety support
 
   get selfLink() {
     return this.metadata.selfLink;
@@ -158,12 +254,10 @@ export class KubeObject implements ItemObject {
   }
 
   getOwnerRefs() {
-    const refs = this.metadata.ownerReferences || [];
+    const refs = this.metadata?.ownerReferences || [];
+    const namespace = this.getNs();
 
-    return refs.map(ownerRef => ({
-      ...ownerRef,
-      namespace: this.getNs(),
-    }));
+    return refs.map(ownerRef => ({ ...ownerRef, namespace }));
   }
 
   getSearchFields() {
@@ -183,8 +277,14 @@ export class KubeObject implements ItemObject {
   }
 
   // use unified resource-applier api for updating all k8s objects
-  async update<T extends KubeObject>(data: Partial<T>) {
-    return resourceApplierApi.update<T>({
+  async update<K extends KubeObject>(data: Partial<K>): Promise<K> {
+    for (const field of KubeObject.nonEditableFields) {
+      if (!_.isEqual(_.get(this, field), _.get(data, field))) {
+        throw new Error(`Failed to update Kube Object: ${field} has been modified`);
+      }
+    }
+
+    return resourceApplierApi.update<K>({
       ...this.toPlainObject(),
       ...data,
     });

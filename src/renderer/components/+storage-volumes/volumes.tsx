@@ -1,15 +1,35 @@
+/**
+ * Copyright (c) 2021 OpenLens Authors
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy of
+ * this software and associated documentation files (the "Software"), to deal in
+ * the Software without restriction, including without limitation the rights to
+ * use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
+ * the Software, and to permit persons to whom the Software is furnished to do so,
+ * subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+ * FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+ * COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+ * IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+ * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+ */
+
 import "./volumes.scss";
 
 import React from "react";
 import { observer } from "mobx-react";
 import { Link, RouteComponentProps } from "react-router-dom";
-import { PersistentVolume } from "../../api/endpoints/persistent-volume.api";
 import { getDetailsUrl, KubeObjectListLayout } from "../kube-object";
-import { IVolumesRouteParams } from "./volumes.route";
 import { stopPropagation } from "../../utils";
 import { volumesStore } from "./volumes.store";
 import { pvcApi, storageClassApi } from "../../api/endpoints";
 import { KubeObjectStatusIcon } from "../kube-object-status-icon";
+import type { VolumesRouteParams } from "../../../common/routes";
 
 enum columnId {
   name = "name",
@@ -20,7 +40,7 @@ enum columnId {
   age = "age",
 }
 
-interface Props extends RouteComponentProps<IVolumesRouteParams> {
+interface Props extends RouteComponentProps<VolumesRouteParams> {
 }
 
 @observer
@@ -31,17 +51,17 @@ export class PersistentVolumes extends React.Component<Props> {
         isConfigurable
         tableId="storage_volumes"
         className="PersistentVolumes"
-        store={volumesStore} isClusterScoped
+        store={volumesStore}
         sortingCallbacks={{
-          [columnId.name]: (item: PersistentVolume) => item.getName(),
-          [columnId.storageClass]: (item: PersistentVolume) => item.getStorageClass(),
-          [columnId.capacity]: (item: PersistentVolume) => item.getCapacity(true),
-          [columnId.status]: (item: PersistentVolume) => item.getStatus(),
-          [columnId.age]: (item: PersistentVolume) => item.getTimeDiffFromNow(),
+          [columnId.name]: item => item.getName(),
+          [columnId.storageClass]: item => item.getStorageClass(),
+          [columnId.capacity]: item => item.getCapacity(true),
+          [columnId.status]: item => item.getStatus(),
+          [columnId.age]: item => item.getTimeDiffFromNow(),
         }}
         searchFilters={[
-          (item: PersistentVolume) => item.getSearchFields(),
-          (item: PersistentVolume) => item.getClaimRefName(),
+          item => item.getSearchFields(),
+          item => item.getClaimRefName(),
         ]}
         renderHeaderTitle="Persistent Volumes"
         renderTableHeader={[
@@ -53,7 +73,7 @@ export class PersistentVolumes extends React.Component<Props> {
           { title: "Age", className: "age", sortBy: columnId.age, id: columnId.age },
           { title: "Status", className: "status", sortBy: columnId.status, id: columnId.status },
         ]}
-        renderTableContents={(volume: PersistentVolume) => {
+        renderTableContents={volume => {
           const { claimRef, storageClassName } = volume.spec;
           const storageClassDetailsUrl = getDetailsUrl(storageClassApi.getUrl({
             name: storageClassName

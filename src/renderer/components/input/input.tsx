@@ -1,28 +1,53 @@
+/**
+ * Copyright (c) 2021 OpenLens Authors
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy of
+ * this software and associated documentation files (the "Software"), to deal in
+ * the Software without restriction, including without limitation the rights to
+ * use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
+ * the Software, and to permit persons to whom the Software is furnished to do so,
+ * subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+ * FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+ * COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+ * IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+ * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+ */
+
 import "./input.scss";
 
 import React, { DOMAttributes, InputHTMLAttributes, TextareaHTMLAttributes } from "react";
-import { autobind, cssNames, debouncePromise, getRandId } from "../../utils";
+import { boundMethod, cssNames, debouncePromise, getRandId } from "../../utils";
 import { Icon } from "../icon";
 import { Tooltip, TooltipProps } from "../tooltip";
 import * as Validators from "./input_validators";
-import { InputValidator } from "./input_validators";
+import type { InputValidator } from "./input_validators";
 import isString from "lodash/isString";
 import isFunction from "lodash/isFunction";
 import isBoolean from "lodash/isBoolean";
 import uniqueId from "lodash/uniqueId";
+import { debounce } from "lodash";
 
 const { conditionalValidators, ...InputValidators } = Validators;
 
-export { InputValidators, InputValidator };
+export { InputValidators };
+export type { InputValidator };
 
 type InputElement = HTMLInputElement | HTMLTextAreaElement;
 type InputElementProps = InputHTMLAttributes<InputElement> & TextareaHTMLAttributes<InputElement> & DOMAttributes<InputElement>;
 
-export type InputProps<T = string> = Omit<InputElementProps, "onChange" | "onSubmit"> & {
-  theme?: "round-black";
+export type InputProps = Omit<InputElementProps, "onChange" | "onSubmit"> & {
+  theme?: "round-black" | "round";
   className?: string;
-  value?: T;
-  autoSelectOnFocus?: boolean
+  value?: string;
+  trim?: boolean;
+  autoSelectOnFocus?: boolean;
+  defaultValue?: string;
   multiLine?: boolean; // use text-area as input field
   maxRows?: number; // when multiLine={true} define max rows size
   dirty?: boolean; // show validation errors even if the field wasn't touched yet
@@ -32,17 +57,17 @@ export type InputProps<T = string> = Omit<InputElementProps, "onChange" | "onSub
   iconRight?: string | React.ReactNode;
   contentRight?: string | React.ReactNode; // Any component of string goes after iconRight
   validators?: InputValidator | InputValidator[];
-  onChange?(value: T, evt: React.ChangeEvent<InputElement>): void;
-  onSubmit?(value: T): void;
+  onChange?(value: string, evt: React.ChangeEvent<InputElement>): void;
+  onSubmit?(value: string, evt: React.KeyboardEvent<InputElement>): void;
 };
 
 interface State {
-  focused?: boolean;
-  dirty?: boolean;
-  dirtyOnBlur?: boolean;
-  valid?: boolean;
-  validating?: boolean;
-  errors?: React.ReactNode[];
+  focused: boolean;
+  dirty: boolean;
+  valid: boolean;
+  validating: boolean;
+  errors: React.ReactNode[];
+  submitted: boolean;
 }
 
 const defaultProps: Partial<InputProps> = {
@@ -50,6 +75,7 @@ const defaultProps: Partial<InputProps> = {
   maxRows: 10000,
   showValidationLine: true,
   validators: [],
+  defaultValue: "",
 };
 
 export class Input extends React.Component<InputProps, State> {
@@ -59,16 +85,15 @@ export class Input extends React.Component<InputProps, State> {
   public validators: InputValidator[] = [];
 
   public state: State = {
-    dirty: !!this.props.dirty,
+    focused: false,
     valid: true,
+    validating: false,
+    dirty: !!this.props.dirty,
     errors: [],
+    submitted: false,
   };
 
-  isValid() {
-    return this.state.valid;
-  }
-
-  setValue(value: string) {
+  setValue(value = "") {
     if (value !== this.getValue()) {
       const nativeInputValueSetter = Object.getOwnPropertyDescriptor(this.input.constructor.prototype, "value").set;
 
@@ -80,12 +105,10 @@ export class Input extends React.Component<InputProps, State> {
   }
 
   getValue(): string {
-    const { value, defaultValue = "" } = this.props;
+    const { trim, value, defaultValue } = this.props;
+    const rawValue = value ?? this.input?.value ?? defaultValue;
 
-    if (value !== undefined) return value; // controlled input
-    if (this.input) return this.input.value; // uncontrolled input
-
-    return defaultValue as string;
+    return trim ? rawValue.trim() : rawValue;
   }
 
   focus() {
@@ -116,7 +139,8 @@ export class Input extends React.Component<InputProps, State> {
 
   private validationId: string;
 
-  async validate(value = this.getValue()) {
+  async validate() {
+    const value = this.getValue();
     let validationId = (this.validationId = ""); // reset every time for async validators
     const asyncValidators: Promise<any>[] = [];
     const errors: React.ReactNode[] = [];
@@ -191,39 +215,32 @@ export class Input extends React.Component<InputProps, State> {
   }
 
   setDirty(dirty = true) {
-    if (this.state.dirty === dirty) return;
     this.setState({ dirty });
   }
 
-  @autobind()
+  @boundMethod
   onFocus(evt: React.FocusEvent<InputElement>) {
     const { onFocus, autoSelectOnFocus } = this.props;
 
-    if (onFocus) onFocus(evt);
+    onFocus?.(evt);
     if (autoSelectOnFocus) this.select();
     this.setState({ focused: true });
   }
 
-  @autobind()
+  @boundMethod
   onBlur(evt: React.FocusEvent<InputElement>) {
-    const { onBlur } = this.props;
-
-    if (onBlur) onBlur(evt);
-    if (this.state.dirtyOnBlur) this.setState({ dirty: true, dirtyOnBlur: false });
+    this.props.onBlur?.(evt);
     this.setState({ focused: false });
   }
 
-  @autobind()
-  onChange(evt: React.ChangeEvent<any>) {
-    if (this.props.onChange) {
-      this.props.onChange(evt.currentTarget.value, evt);
-    }
+  setDirtyOnChange = debounce(() => this.setDirty(), 500);
 
+  @boundMethod
+  onChange(evt: React.ChangeEvent<any>) {
+    this.props.onChange?.(evt.currentTarget.value, evt);
     this.validate();
     this.autoFitHeight();
-
-    // mark input as dirty for the first time only onBlur() to avoid immediate error-state show when start typing
-    if (!this.state.dirty) this.setState({ dirtyOnBlur: true });
+    this.setDirtyOnChange();
 
     // re-render component when used as uncontrolled input
     // when used @defaultValue instead of @value changing real input.value doesn't call render()
@@ -232,20 +249,22 @@ export class Input extends React.Component<InputProps, State> {
     }
   }
 
-  @autobind()
-  onKeyDown(evt: React.KeyboardEvent<any>) {
-    const modified = evt.shiftKey || evt.metaKey || evt.altKey || evt.ctrlKey;
+  @boundMethod
+  onKeyDown(evt: React.KeyboardEvent<InputElement>) {
+    this.props.onKeyDown?.(evt);
 
-    if (this.props.onKeyDown) {
-      this.props.onKeyDown(evt);
+    if (evt.shiftKey || evt.metaKey || evt.altKey || evt.ctrlKey || evt.repeat) {
+      return;
     }
 
-    switch (evt.key) {
-      case "Enter":
-        if (this.props.onSubmit && !modified && !evt.repeat && this.isValid) {
-          this.props.onSubmit(this.getValue());
-        }
-        break;
+    if (evt.key === "Enter") {
+      if (this.state.valid) {
+        this.props.onSubmit?.(this.getValue(), evt);
+        this.setDirtyOnChange.cancel();
+        this.setState({ submitted: true });
+      } else {
+        this.setDirty();
+      }
     }
   }
 
@@ -268,7 +287,11 @@ export class Input extends React.Component<InputProps, State> {
     const { defaultValue, value, dirty, validators } = this.props;
 
     if (prevProps.value !== value || defaultValue !== prevProps.defaultValue) {
-      this.validate();
+      if (!this.state.submitted) {
+        this.validate();
+      } else {
+        this.setState({ submitted: false });
+      }
       this.autoFitHeight();
     }
 
@@ -281,7 +304,21 @@ export class Input extends React.Component<InputProps, State> {
     }
   }
 
-  @autobind()
+  get themeSelection(): Record<string, boolean> {
+    const { theme } = this.props;
+
+    if (!theme) {
+      return {};
+    }
+
+    return {
+      theme: true,
+      round: true,
+      black: theme === "round-black",
+    };
+  }
+
+  @boundMethod
   bindRef(elem: InputElement) {
     this.input = elem;
   }
@@ -296,7 +333,7 @@ export class Input extends React.Component<InputProps, State> {
     const { focused, dirty, valid, validating, errors } = this.state;
 
     const className = cssNames("Input", this.props.className, {
-      [`theme ${theme}`]: theme,
+      ...this.themeSelection,
       focused,
       disabled,
       invalid: !valid,
@@ -315,6 +352,7 @@ export class Input extends React.Component<InputProps, State> {
       rows: multiLine ? (rows || 1) : null,
       ref: this.bindRef,
       spellCheck: "false",
+      disabled,
     });
     const showErrors = errors.length > 0 && !valid && dirty;
     const errorsInfo = (

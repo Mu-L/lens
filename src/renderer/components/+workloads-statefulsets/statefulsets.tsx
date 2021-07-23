@@ -1,21 +1,41 @@
+/**
+ * Copyright (c) 2021 OpenLens Authors
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy of
+ * this software and associated documentation files (the "Software"), to deal in
+ * the Software without restriction, including without limitation the rights to
+ * use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
+ * the Software, and to permit persons to whom the Software is furnished to do so,
+ * subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+ * FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+ * COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+ * IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+ * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+ */
+
 import "./statefulsets.scss";
 
 import React from "react";
 import { observer } from "mobx-react";
-import { RouteComponentProps } from "react-router";
-import { StatefulSet } from "../../api/endpoints";
+import type { RouteComponentProps } from "react-router";
+import type { StatefulSet } from "../../api/endpoints";
 import { podsStore } from "../+workloads-pods/pods.store";
 import { statefulSetStore } from "./statefulset.store";
 import { nodesStore } from "../+nodes/nodes.store";
 import { eventStore } from "../+events/event.store";
-import { KubeObjectMenuProps } from "../kube-object/kube-object-menu";
+import type { KubeObjectMenuProps } from "../kube-object/kube-object-menu";
 import { KubeObjectListLayout } from "../kube-object";
-import { IStatefulSetsRouteParams } from "../+workloads";
 import { KubeObjectStatusIcon } from "../kube-object-status-icon";
 import { StatefulSetScaleDialog } from "./statefulset-scale-dialog";
 import { MenuItem } from "../menu/menu";
 import { Icon } from "../icon/icon";
-import { kubeObjectMenuRegistry } from "../../../extensions/registries/kube-object-menu-registry";
+import type { StatefulSetsRouteParams } from "../../../common/routes";
 
 enum columnId {
   name = "name",
@@ -25,7 +45,7 @@ enum columnId {
   replicas = "replicas",
 }
 
-interface Props extends RouteComponentProps<IStatefulSetsRouteParams> {
+interface Props extends RouteComponentProps<StatefulSetsRouteParams> {
 }
 
 @observer
@@ -44,13 +64,13 @@ export class StatefulSets extends React.Component<Props> {
         className="StatefulSets" store={statefulSetStore}
         dependentStores={[podsStore, nodesStore, eventStore]}
         sortingCallbacks={{
-          [columnId.name]: (statefulSet: StatefulSet) => statefulSet.getName(),
-          [columnId.namespace]: (statefulSet: StatefulSet) => statefulSet.getNs(),
-          [columnId.age]: (statefulSet: StatefulSet) => statefulSet.getTimeDiffFromNow(),
-          [columnId.replicas]: (statefulSet: StatefulSet) => statefulSet.getReplicas(),
+          [columnId.name]: statefulSet => statefulSet.getName(),
+          [columnId.namespace]: statefulSet => statefulSet.getNs(),
+          [columnId.age]: statefulSet => statefulSet.getTimeDiffFromNow(),
+          [columnId.replicas]: statefulSet => statefulSet.getReplicas(),
         }}
         searchFilters={[
-          (statefulSet: StatefulSet) => statefulSet.getSearchFields(),
+          statefulSet => statefulSet.getSearchFields(),
         ]}
         renderHeaderTitle="Stateful Sets"
         renderTableHeader={[
@@ -61,7 +81,7 @@ export class StatefulSets extends React.Component<Props> {
           { className: "warning", showWithColumn: columnId.replicas },
           { title: "Age", className: "age", sortBy: columnId.age, id: columnId.age },
         ]}
-        renderTableContents={(statefulSet: StatefulSet) => [
+        renderTableContents={statefulSet => [
           statefulSet.getName(),
           statefulSet.getNs(),
           this.renderPods(statefulSet),
@@ -69,9 +89,7 @@ export class StatefulSets extends React.Component<Props> {
           <KubeObjectStatusIcon key="icon" object={statefulSet}/>,
           statefulSet.getAge(),
         ]}
-        renderItemMenu={(item: StatefulSet) => {
-          return <StatefulSetMenu object={item}/>;
-        }}
+        renderItemMenu={item => <StatefulSetMenu object={item} />}
       />
     );
   }
@@ -83,17 +101,9 @@ export function StatefulSetMenu(props: KubeObjectMenuProps<StatefulSet>) {
   return (
     <>
       <MenuItem onClick={() => StatefulSetScaleDialog.open(object)}>
-        <Icon material="open_with" title="Scale" interactive={toolbar}/>
+        <Icon material="open_with" tooltip="Scale" interactive={toolbar}/>
         <span className="title">Scale</span>
       </MenuItem>
     </>
   );
 }
-
-kubeObjectMenuRegistry.add({
-  kind: "StatefulSet",
-  apiVersions: ["apps/v1"],
-  components: {
-    MenuItem: StatefulSetMenu
-  }
-});

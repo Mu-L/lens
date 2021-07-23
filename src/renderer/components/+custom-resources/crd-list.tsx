@@ -1,21 +1,41 @@
+/**
+ * Copyright (c) 2021 OpenLens Authors
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy of
+ * this software and associated documentation files (the "Software"), to deal in
+ * the Software without restriction, including without limitation the rights to
+ * use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
+ * the Software, and to permit persons to whom the Software is furnished to do so,
+ * subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+ * FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+ * COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+ * IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+ * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+ */
+
 import "./crd-list.scss";
 
 import React from "react";
-import { computed } from "mobx";
+import { computed, makeObservable } from "mobx";
 import { observer } from "mobx-react";
 import { Link } from "react-router-dom";
 import { stopPropagation } from "../../utils";
 import { KubeObjectListLayout } from "../kube-object";
 import { crdStore } from "./crd.store";
-import { CustomResourceDefinition } from "../../api/endpoints/crd.api";
+import type { CustomResourceDefinition } from "../../api/endpoints/crd.api";
 import { Select, SelectOption } from "../select";
 import { createPageParam } from "../../navigation";
 import { Icon } from "../icon";
+import type { TableSortCallbacks } from "../table";
 
 export const crdGroupsUrlParam = createPageParam<string[]>({
   name: "groups",
-  multiValues: true,
-  isSystem: true,
   defaultValue: [],
 });
 
@@ -29,6 +49,11 @@ enum columnId {
 
 @observer
 export class CrdList extends React.Component {
+  constructor(props: {}) {
+    super(props);
+    makeObservable(this);
+  }
+
   get selectedGroups(): string[] {
     return crdGroupsUrlParam.get();
   }
@@ -54,11 +79,11 @@ export class CrdList extends React.Component {
 
   render() {
     const { items, selectedGroups } = this;
-    const sortingCallbacks = {
-      [columnId.kind]: (crd: CustomResourceDefinition) => crd.getResourceKind(),
-      [columnId.group]: (crd: CustomResourceDefinition) => crd.getGroup(),
-      [columnId.version]: (crd: CustomResourceDefinition) => crd.getVersion(),
-      [columnId.scope]: (crd: CustomResourceDefinition) => crd.getScope(),
+    const sortingCallbacks: TableSortCallbacks<CustomResourceDefinition> = {
+      [columnId.kind]: crd => crd.getResourceKind(),
+      [columnId.group]: crd => crd.getGroup(),
+      [columnId.version]: crd => crd.getVersion(),
+      [columnId.scope]: crd => crd.getScope(),
     };
 
     return (
@@ -66,13 +91,12 @@ export class CrdList extends React.Component {
         isConfigurable
         tableId="crd"
         className="CrdList"
-        isClusterScoped={true}
         store={crdStore}
         items={items}
         sortingCallbacks={sortingCallbacks}
         searchFilters={Object.values(sortingCallbacks)}
         renderHeaderTitle="Custom Resources"
-        customizeHeader={() => {
+        customizeHeader={({ filters, ...headerPlaceholders }) => {
           let placeholder = <>All groups</>;
 
           if (selectedGroups.length == 1) placeholder = <>Group: {selectedGroups[0]}</>;
@@ -81,26 +105,30 @@ export class CrdList extends React.Component {
           return {
             // todo: move to global filters
             filters: (
-              <Select
-                className="group-select"
-                placeholder={placeholder}
-                options={Object.keys(crdStore.groups)}
-                onChange={({ value: group }: SelectOption) => this.toggleSelection(group)}
-                closeMenuOnSelect={false}
-                controlShouldRenderValue={false}
-                formatOptionLabel={({ value: group }: SelectOption) => {
-                  const isSelected = selectedGroups.includes(group);
-
-                  return (
-                    <div className="flex gaps align-center">
-                      <Icon small material="folder"/>
-                      <span>{group}</span>
-                      {isSelected && <Icon small material="check" className="box right"/>}
-                    </div>
-                  );
-                }}
-              />
-            )
+              <>
+                {filters}
+                <Select
+                  className="group-select"
+                  placeholder={placeholder}
+                  options={Object.keys(crdStore.groups)}
+                  onChange={({ value: group }: SelectOption) => this.toggleSelection(group)}
+                  closeMenuOnSelect={false}
+                  controlShouldRenderValue={false}
+                  formatOptionLabel={({ value: group }: SelectOption) => {
+                    const isSelected = selectedGroups.includes(group);
+  
+                    return (
+                      <div className="flex gaps align-center">
+                        <Icon small material="folder"/>
+                        <span>{group}</span>
+                        {isSelected && <Icon small material="check" className="box right"/>}
+                      </div>
+                    );
+                  }}
+                />
+              </>
+            ),
+            ...headerPlaceholders,
           };
         }}
         renderTableHeader={[
@@ -110,9 +138,9 @@ export class CrdList extends React.Component {
           { title: "Scope", className: "scope", sortBy: columnId.scope, id: columnId.scope },
           { title: "Age", className: "age", sortBy: columnId.age, id: columnId.age },
         ]}
-        renderTableContents={(crd: CustomResourceDefinition) => [
+        renderTableContents={crd => [
           <Link key="link" to={crd.getResourceUrl()} onClick={stopPropagation}>
-            {crd.getResourceTitle()}
+            {crd.getResourceKind()}
           </Link>,
           crd.getGroup(),
           crd.getVersion(),

@@ -1,8 +1,31 @@
-import { stringify } from "querystring";
-import { autobind, base64, EventEmitter } from "../utils";
+/**
+ * Copyright (c) 2021 OpenLens Authors
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy of
+ * this software and associated documentation files (the "Software"), to deal in
+ * the Software without restriction, including without limitation the rights to
+ * use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
+ * the Software, and to permit persons to whom the Software is furnished to do so,
+ * subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+ * FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+ * COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+ * IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+ * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+ */
+
+import { boundMethod, base64, EventEmitter } from "../utils";
 import { WebSocketApi } from "./websocket-api";
 import isEqual from "lodash/isEqual";
 import { isDevelopment } from "../../common/vars";
+import url from "url";
+import { makeObservable, observable } from "mobx";
+import type { ParsedUrlQueryInput } from "querystring";
 
 export enum TerminalChannels {
   STDIN = 0,
@@ -34,7 +57,9 @@ export class TerminalApi extends WebSocketApi {
   protected size: { Width: number; Height: number };
 
   public onReady = new EventEmitter<[]>();
-  public isReady = false;
+  @observable public isReady = false;
+  @observable public shellRunCommandsFinished = false;
+  public readonly url: string;
 
   constructor(protected options: TerminalApiQuery) {
     super({
@@ -42,34 +67,33 @@ export class TerminalApi extends WebSocketApi {
       flushOnOpen: false,
       pingIntervalSeconds: 30,
     });
-  }
+    makeObservable(this);
 
-  async getUrl() {
-    let { port } = location;
-    const { hostname, protocol } = location;
-    const { id, node } = this.options;
-    const wss = `ws${protocol === "https:" ? "s" : ""}://`;
-    const query: TerminalApiQuery = { id };
+    const { hostname, protocol, port } = location;
+    const query: ParsedUrlQueryInput = {
+      id: options.id,
+    };
 
-    if (port) {
-      port = `:${port}`;
+    if (options.node) {
+      query.node = options.node;
+      query.type = options.type || "node";
     }
 
-    if (node) {
-      query.node = node;
-      query.type = "node";
-    }
-
-    return `${wss}${hostname}${port}/api?${stringify(query)}`;
+    this.url = url.format({
+      protocol: protocol.includes("https") ? "wss" : "ws",
+      hostname,
+      port,
+      pathname: "/api",
+      query,
+      slashes: true,
+    });
   }
 
-  async connect() {
-    const apiUrl = await this.getUrl();
-
+  connect() {
     this.emitStatus("Connecting ...");
     this.onData.addListener(this._onReady, { prepend: true });
-
-    return super.connect(apiUrl);
+    this.onData.addListener(this._onShellRunCommandsFinished);
+    super.connect(this.url);
   }
 
   destroy() {
@@ -85,9 +109,27 @@ export class TerminalApi extends WebSocketApi {
     this.onReady.removeAllListeners();
   }
 
-  @autobind()
+  _onShellRunCommandsFinished = (data: string) => {
+    if (!data) {
+      return;
+    }
+
+    /**
+     * This is a heuistic for ditermining when a shell has finished executing
+     * its own rc file (or RunCommands file) such as `.bashrc` or `.zshrc`.
+     *
+     * This heuistic assumes that the prompt line of a terminal is a single line
+     * and ends with a whitespace character.
+     */
+    if (data.match(/\r?\n/) === null && data.match(/\s$/)) {
+      this.shellRunCommandsFinished = true;
+      this.onData.removeListener(this._onShellRunCommandsFinished);
+    }
+  };
+
+  @boundMethod
   protected _onReady(data: string) {
-    if (!data) return;
+    if (!data) return true;
     this.isReady = true;
     this.onReady.emit();
     this.onData.removeListener(this._onReady);

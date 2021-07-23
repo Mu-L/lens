@@ -1,8 +1,31 @@
+/**
+ * Copyright (c) 2021 OpenLens Authors
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy of
+ * this software and associated documentation files (the "Software"), to deal in
+ * the Software without restriction, including without limitation the rights to
+ * use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
+ * the Software, and to permit persons to whom the Software is furnished to do so,
+ * subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+ * FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+ * COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+ * IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+ * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+ */
+
 import get from "lodash/get";
-import { IPodContainer } from "./pods.api";
 import { IAffinity, WorkloadKubeObject } from "../workload-kube-object";
-import { autobind } from "../../utils";
+import { autoBind } from "../../utils";
 import { KubeApi } from "../kube-api";
+import { metricsApi } from "./metrics.api";
+import type { IPodContainer, IPodMetrics } from "./pods.api";
+import type { KubeJsonApiData } from "../kube-json-api";
 
 export class StatefulSetApi extends KubeApi<StatefulSet> {
   protected getScaleApiUrl(params: { namespace: string; name: string }) {
@@ -27,13 +50,32 @@ export class StatefulSetApi extends KubeApi<StatefulSet> {
   }
 }
 
-@autobind()
+export function getMetricsForStatefulSets(statefulSets: StatefulSet[], namespace: string, selector = ""): Promise<IPodMetrics> {
+  const podSelector = statefulSets.map(statefulset => `${statefulset.getName()}-[[:digit:]]+`).join("|");
+  const opts = { category: "pods", pods: podSelector, namespace, selector };
+
+  return metricsApi.getMetrics({
+    cpuUsage: opts,
+    memoryUsage: opts,
+    fsUsage: opts,
+    networkReceive: opts,
+    networkTransmit: opts,
+  }, {
+    namespace,
+  });
+}
+
 export class StatefulSet extends WorkloadKubeObject {
   static kind = "StatefulSet";
   static namespaced = true;
   static apiBase = "/apis/apps/v1/statefulsets";
 
-  spec: {
+  constructor(data: KubeJsonApiData) {
+    super(data);
+    autoBind(this);
+  }
+
+  declare spec: {
     serviceName: string;
     replicas: number;
     selector: {
@@ -86,7 +128,7 @@ export class StatefulSet extends WorkloadKubeObject {
       };
     }[];
   };
-  status: {
+  declare status: {
     observedGeneration: number;
     replicas: number;
     currentReplicas: number;

@@ -1,15 +1,36 @@
+/**
+ * Copyright (c) 2021 OpenLens Authors
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy of
+ * this software and associated documentation files (the "Software"), to deal in
+ * the Software without restriction, including without limitation the rights to
+ * use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
+ * the Software, and to permit persons to whom the Software is furnished to do so,
+ * subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+ * FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+ * COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+ * IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+ * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+ */
+
 import "./namespaces.scss";
 
 import React from "react";
-import { Namespace, NamespaceStatus } from "../../api/endpoints";
+import { NamespaceStatus } from "../../api/endpoints";
 import { AddNamespaceDialog } from "./add-namespace-dialog";
 import { TabLayout } from "../layout/tab-layout";
 import { Badge } from "../badge";
-import { RouteComponentProps } from "react-router";
+import type { RouteComponentProps } from "react-router";
 import { KubeObjectListLayout } from "../kube-object";
-import { INamespacesRouteParams } from "./namespaces.route";
 import { namespaceStore } from "./namespace.store";
 import { KubeObjectStatusIcon } from "../kube-object-status-icon";
+import type { NamespacesRouteParams } from "../../../common/routes";
 
 enum columnId {
   name = "name",
@@ -18,7 +39,7 @@ enum columnId {
   status = "status",
 }
 
-interface Props extends RouteComponentProps<INamespacesRouteParams> {
+interface Props extends RouteComponentProps<NamespacesRouteParams> {
 }
 
 export class Namespaces extends React.Component<Props> {
@@ -26,19 +47,18 @@ export class Namespaces extends React.Component<Props> {
     return (
       <TabLayout>
         <KubeObjectListLayout
-          isClusterScoped
           isConfigurable
           tableId="namespaces"
           className="Namespaces" store={namespaceStore}
           sortingCallbacks={{
-            [columnId.name]: (ns: Namespace) => ns.getName(),
-            [columnId.labels]: (ns: Namespace) => ns.getLabels(),
-            [columnId.age]: (ns: Namespace) => ns.getTimeDiffFromNow(),
-            [columnId.status]: (ns: Namespace) => ns.getStatus(),
+            [columnId.name]: ns => ns.getName(),
+            [columnId.labels]: ns => ns.getLabels(),
+            [columnId.age]: ns => ns.getTimeDiffFromNow(),
+            [columnId.status]: ns => ns.getStatus(),
           }}
           searchFilters={[
-            (item: Namespace) => item.getSearchFields(),
-            (item: Namespace) => item.getStatus()
+            item => item.getSearchFields(),
+            item => item.getStatus()
           ]}
           renderHeaderTitle="Namespaces"
           renderTableHeader={[
@@ -48,7 +68,7 @@ export class Namespaces extends React.Component<Props> {
             { title: "Age", className: "age", sortBy: columnId.age, id: columnId.age },
             { title: "Status", className: "status", sortBy: columnId.status, id: columnId.status },
           ]}
-          renderTableContents={(item: Namespace) => [
+          renderTableContents={item => [
             item.getName(),
             <KubeObjectStatusIcon key="icon" object={item} />,
             item.getLabels().map(label => <Badge key={label} label={label}/>),
@@ -59,7 +79,7 @@ export class Namespaces extends React.Component<Props> {
             addTooltip: "Add Namespace",
             onAdd: () => AddNamespaceDialog.open(),
           }}
-          customizeTableRowProps={(item: Namespace) => ({
+          customizeTableRowProps={item => ({
             disabled: item.getStatus() === NamespaceStatus.TERMINATING,
           })}
         />

@@ -1,14 +1,34 @@
+/**
+ * Copyright (c) 2021 OpenLens Authors
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy of
+ * this software and associated documentation files (the "Software"), to deal in
+ * the Software without restriction, including without limitation the rights to
+ * use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
+ * the Software, and to permit persons to whom the Software is furnished to do so,
+ * subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+ * FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+ * COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+ * IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+ * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+ */
+
 import "./nodes.scss";
 import React from "react";
-import { observer } from "mobx-react";
-import { RouteComponentProps } from "react-router";
+import { disposeOnUnmount, observer } from "mobx-react";
+import type { RouteComponentProps } from "react-router";
 import { cssNames, interval } from "../../utils";
 import { TabLayout } from "../layout/tab-layout";
 import { nodesStore } from "./nodes.store";
 import { podsStore } from "../+workloads-pods/pods.store";
 import { KubeObjectListLayout } from "../kube-object";
-import { INodesRouteParams } from "./nodes.route";
-import { Node } from "../../api/endpoints/nodes.api";
+import { getMetricsForAllNodes, INodeMetrics, Node } from "../../api/endpoints/nodes.api";
 import { LineProgress } from "../line-progress";
 import { bytesToUnits } from "../../utils/convertMemory";
 import { Tooltip, TooltipPosition } from "../tooltip";
@@ -16,6 +36,11 @@ import kebabCase from "lodash/kebabCase";
 import upperFirst from "lodash/upperFirst";
 import { KubeObjectStatusIcon } from "../kube-object-status-icon";
 import { Badge } from "../badge/badge";
+import { kubeWatchApi } from "../../api/kube-watch-api";
+import { eventStore } from "../+events/event.store";
+import type { NodesRouteParams } from "../../../common/routes";
+import { observable } from "mobx";
+import isEmpty from "lodash/isEmpty";
 
 enum columnId {
   name = "name",
@@ -30,30 +55,60 @@ enum columnId {
   status = "status",
 }
 
-interface Props extends RouteComponentProps<INodesRouteParams> {
+interface Props extends RouteComponentProps<NodesRouteParams> {
 }
 
 @observer
 export class Nodes extends React.Component<Props> {
-  private metricsWatcher = interval(30, () => nodesStore.loadUsageMetrics());
+  @observable metrics: Partial<INodeMetrics> = {};
+  private metricsWatcher = interval(30, async () => this.metrics = await getMetricsForAllNodes());
 
   componentDidMount() {
     this.metricsWatcher.start(true);
+    disposeOnUnmount(this, [
+      kubeWatchApi.subscribeStores([nodesStore, podsStore, eventStore], {
+        preload: true,
+      })
+    ]);
   }
 
   componentWillUnmount() {
     this.metricsWatcher.stop();
   }
 
+  getLastMetricValues(node: Node, metricNames: string[]): number[] {
+    if (isEmpty(this.metrics)) {
+      return [];
+    }
+    const nodeName = node.getName();
+
+    return metricNames.map(metricName => {
+      try {
+        const metric = this.metrics[metricName];
+        const result = metric.data.result.find(result => {
+          return [
+            result.metric.node,
+            result.metric.instance,
+            result.metric.kubernetes_node,
+          ].includes(nodeName);
+        });
+
+        return result ? parseFloat(result.values.slice(-1)[0][1]) : 0;
+      } catch (e) {
+        return 0;
+      }
+    });
+  }
+
   renderCpuUsage(node: Node) {
-    const metrics = nodesStore.getLastMetricValues(node, ["cpuUsage", "cpuCapacity"]);
+    const metrics = this.getLastMetricValues(node, ["cpuUsage", "cpuCapacity"]);
 
     if (!metrics || !metrics[1]) return <LineProgress value={0}/>;
     const usage = metrics[0];
     const cores = metrics[1];
     const cpuUsagePercent = Math.ceil(usage * 100) / cores;
-    const cpuUsagePercentLabel: String = cpuUsagePercent % 1 === 0 
-      ? cpuUsagePercent.toString() 
+    const cpuUsagePercentLabel: String = cpuUsagePercent % 1 === 0
+      ? cpuUsagePercent.toString()
       : cpuUsagePercent.toFixed(2);
 
     return (
@@ -69,7 +124,7 @@ export class Nodes extends React.Component<Props> {
   }
 
   renderMemoryUsage(node: Node) {
-    const metrics = nodesStore.getLastMetricValues(node, ["memoryUsage", "memoryCapacity"]);
+    const metrics = this.getLastMetricValues(node, ["workloadMemoryUsage", "memoryAllocatableCapacity"]);
 
     if (!metrics || !metrics[1]) return <LineProgress value={0}/>;
     const usage = metrics[0];
@@ -88,7 +143,7 @@ export class Nodes extends React.Component<Props> {
   }
 
   renderDiskUsage(node: Node): any {
-    const metrics = nodesStore.getLastMetricValues(node, ["fsUsage", "fsSize"]);
+    const metrics = this.getLastMetricValues(node, ["fsUsage", "fsSize"]);
 
     if (!metrics || !metrics[1]) return <LineProgress value={0}/>;
     const usage = metrics[0];
@@ -138,26 +193,26 @@ export class Nodes extends React.Component<Props> {
           isConfigurable
           tableId="nodes"
           className="Nodes"
-          store={nodesStore} isClusterScoped
+          store={nodesStore}
           isReady={nodesStore.isLoaded}
           dependentStores={[podsStore]}
           isSelectable={false}
           sortingCallbacks={{
-            [columnId.name]: (node: Node) => node.getName(),
-            [columnId.cpu]: (node: Node) => nodesStore.getLastMetricValues(node, ["cpuUsage"]),
-            [columnId.memory]: (node: Node) => nodesStore.getLastMetricValues(node, ["memoryUsage"]),
-            [columnId.disk]: (node: Node) => nodesStore.getLastMetricValues(node, ["fsUsage"]),
-            [columnId.conditions]: (node: Node) => node.getNodeConditionText(),
-            [columnId.taints]: (node: Node) => node.getTaints().length,
-            [columnId.roles]: (node: Node) => node.getRoleLabels(),
-            [columnId.age]: (node: Node) => node.getTimeDiffFromNow(),
-            [columnId.version]: (node: Node) => node.getKubeletVersion(),
+            [columnId.name]: node => node.getName(),
+            [columnId.cpu]: node => this.getLastMetricValues(node, ["cpuUsage"]),
+            [columnId.memory]: node => this.getLastMetricValues(node, ["memoryUsage"]),
+            [columnId.disk]: node => this.getLastMetricValues(node, ["fsUsage"]),
+            [columnId.conditions]: node => node.getNodeConditionText(),
+            [columnId.taints]: node => node.getTaints().length,
+            [columnId.roles]: node => node.getRoleLabels(),
+            [columnId.age]: node => node.getTimeDiffFromNow(),
+            [columnId.version]: node => node.getKubeletVersion(),
           }}
           searchFilters={[
-            (node: Node) => node.getSearchFields(),
-            (node: Node) => node.getRoleLabels(),
-            (node: Node) => node.getKubeletVersion(),
-            (node: Node) => node.getNodeConditionText(),
+            node => node.getSearchFields(),
+            node => node.getRoleLabels(),
+            node => node.getKubeletVersion(),
+            node => node.getNodeConditionText(),
           ]}
           renderHeaderTitle="Nodes"
           renderTableHeader={[
@@ -172,7 +227,7 @@ export class Nodes extends React.Component<Props> {
             { title: "Age", className: "age", sortBy: columnId.age, id: columnId.age },
             { title: "Conditions", className: "conditions", sortBy: columnId.conditions, id: columnId.conditions },
           ]}
-          renderTableContents={(node: Node) => {
+          renderTableContents={node => {
             const tooltipId = `node-taints-${node.getId()}`;
 
             return [
